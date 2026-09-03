@@ -39,7 +39,6 @@ def calculate_pension_tax(monthly_pension):
         if deduction > 9000000:
             deduction = 9000000
             
-    # [디버깅] 들여쓰기 수정: if문 밖으로 빼내어 항시 계산되도록 함
     income_amount = yearly_pension - deduction
     tax_base = income_amount - 1500000
     if tax_base < 0: tax_base = 0
@@ -66,11 +65,8 @@ def calculate_salary(start_year, current_age, start_step, military_months, retir
     
     data = []
     taxable_monthly_incomes_revalued = []
-    np_monthly_incomes_revalued = []
     total_pension_contributions = 0
     total_national_pension_contributions = 0
-    
-    NP_MAX_INCOME = 6370000  # 국민연금 소득 상한선
     
     for i in range(years_to_work + 1):
         year = start_year + i
@@ -105,20 +101,16 @@ def calculate_salary(start_year, current_age, start_step, military_months, retir
         taxable_annual_income = total_annual_salary - (meal_allowance * 12)
         standard_monthly_income = taxable_annual_income / 12
         
-        # 소득재평가 반영
+        # 기사 기준: 퇴직 시점 가치로 소득재평가 반영 (연평균 소득인상률 반영)
         revalued_income = standard_monthly_income * ((1 + increase_rate / 100) ** (years_to_work - i))
         taxable_monthly_incomes_revalued.append(revalued_income)
         
-        # 국민연금 상한 적용 소득
-        np_capped_income = min(standard_monthly_income, NP_MAX_INCOME)
-        np_revalued_income = np_capped_income * ((1 + increase_rate / 100) ** (years_to_work - i))
-        np_monthly_incomes_revalued.append(np_revalued_income)
-        
-        # 기여금 계산
+        # 사학연금 기여금 (9%)
         annual_contribution = standard_monthly_income * 0.09 * 12
         total_pension_contributions += annual_contribution
         
-        annual_np_contribution = np_capped_income * 0.045 * 12
+        # 국민연금 기여금 (4.5%)
+        annual_np_contribution = standard_monthly_income * 0.045 * 12
         total_national_pension_contributions += annual_np_contribution
         
         data.append({
@@ -136,38 +128,35 @@ def calculate_salary(start_year, current_age, start_step, military_months, retir
         
     final_service_months = military_months + (years_to_work * 12)
     final_service_years_float = final_service_months / 12
-    
-    # 사학연금 계산 (1.7%)
     avg_standard_monthly_income = sum(taxable_monthly_incomes_revalued) / len(taxable_monthly_incomes_revalued)
+    
+    # 1. 사학연금 명목 수령액 계산 (재직 1년당 1.7%)
     estimated_gross_pension = avg_standard_monthly_income * final_service_years_float * 0.017
     
-    # 국민연금 정상 산식 적용
-    assumed_A_value = 3200000 
-    avg_np_monthly_income = sum(np_monthly_incomes_revalued) / len(np_monthly_incomes_revalued)
-    extra_years = max(0, final_service_years_float - 20)
-    
-    annual_np_basic = 1.25 * 1.075 * (assumed_A_value + avg_np_monthly_income) * (1 + 0.05 * extra_years)
-    national_pension_gross = (annual_np_basic / 12) * (final_service_years_float / 40)
+    # 2. 국민연금 기사(보건복지부 추계) 기준 명목 수령액 산식
+    # 상한선 제한을 풀고, 전체 가입자 평균소득(A값)과 본인평균(B값)을 반영한 기사 방식 산식
+    assumed_A_value = 3000000 * ((1 + increase_rate / 100) ** years_to_work)  # A값도 인상률 반영
+    national_pension_gross = 0.5 * (assumed_A_value + avg_standard_monthly_income) * (final_service_years_float / 40) * 1.0
     
     return pd.DataFrame(data), final_service_months, total_pension_contributions, total_national_pension_contributions, estimated_gross_pension, national_pension_gross
 
-# Streamlit UI
 st.set_page_config(page_title="생애소득 및 사학연금 시뮬레이터", layout="wide")
-st.title("🏥 생애소득 및 사학연금 시뮬레이터")
+st.title("🏥 생애소득 및 사학연금 시뮬레이터 (기사 추계 기준 반영)")
 
 with st.sidebar:
     st.header("👤 기본 정보")
-    start_year = st.number_input("임용 연도", min_value=2000, max_value=2050, value=2024, help="입사한 연도를 입력하세요.")
+    start_year = st.number_input("임용 연도", min_value=2000, max_value=2050, value=2027, help="입사한 연도를 입력하세요.")
     current_age = st.number_input("임용 시 나이 (만)", min_value=20, max_value=60, value=30)
-    start_step = st.number_input("입사 시 시작 호봉 (5급 기준)", min_value=1, max_value=10, value=1)
-    military_months = st.number_input("군소급 인정 기간 (개월)", min_value=0, max_value=60, value=0, step=1)
+    start_step = st.number_input("입사 시 시작 호봉 (5급 기준)", min_value=1, max_value=10, value=3)
+    military_months = st.number_input("군소급 인정 기간 (개월)", min_value=0, max_value=60, value=24, step=1)
     retirement_age = st.number_input("정년 퇴직 나이", min_value=50, max_value=65, value=60)
     
     st.divider()
     
     st.header("📈 경제 지표 가정")
-    increase_rate = st.slider("연평균 기본급 인상률 (%)", min_value=0.0, max_value=5.0, value=1.5, step=0.5)
-    inflation_rate = st.slider("연평균 물가상승률 (%)", min_value=0.0, max_value=5.0, value=2.0, step=0.5)
+    # 기사 기준 연평균 소득인상률 3.77% 적용
+    increase_rate = st.slider("연평균 임금/소득 인상률 (%)", min_value=0.0, max_value=6.0, value=3.77, step=0.01, help="복지부 기사 추계 기준: 3.77%")
+    inflation_rate = st.slider("연평균 물가상승률 (%)", min_value=0.0, max_value=5.0, value=2.0, step=0.5, help="현재 가치 환산 시 적용할 할인율")
     
     calc_button = st.button("계산하기", type="primary", use_container_width=True)
 
@@ -177,8 +166,6 @@ if calc_button:
     )
     
     monthly_tax, estimated_net_pension = calculate_pension_tax(estimated_gross_pension)
-    
-    # [디버깅] ZeroDivisionError 방지
     recovery_years = total_contributions / (estimated_net_pension * 12) if estimated_net_pension > 0 else 0
     
     years_to_pension = max(0, 65 - current_age)
@@ -195,21 +182,22 @@ if calc_button:
     
     st.divider()
     
-    st.markdown("### 💰 65세 예상 사학연금 (월 수령액)")
+    st.markdown(f"### 💰 65세 예상 사학연금 (명목 수령액 / 인상률 {increase_rate}% 반영)")
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric(label="① 세전 수령액", value=f"{int(estimated_gross_pension):,}원")
+    col1.metric(label="① 세전 수령액 (명목)", value=f"{int(estimated_gross_pension):,}원")
     col2.metric(label="② 세금 (소득/지방세)", value=f"{int(monthly_tax):,}원")
-    col3.metric(label="③ 세후 수령액", value=f"{int(estimated_net_pension):,}원")
-    col4.metric(label="④ 현재 가치 환산", value=f"{int(pv_net_pension):,}원")
+    col3.metric(label="③ 세후 수령액 (명목)", value=f"{int(estimated_net_pension):,}원")
+    col4.metric(label="④ 현재 가치 환산 체감액", value=f"{int(pv_net_pension):,}원", help=f"물가상승률({inflation_rate}%)을 적용해 지금의 돈 가치로 환산한 수치")
 
     st.divider()
 
-    st.markdown("### ⚖️ 국민연금 가입 시 비교 (동일 소득 기준 간이 비교)")
+    st.markdown(f"### ⚖️ 국민연금 가입 시 비교 (기사 추계 산식 기준 / 인상률 {increase_rate}% 반영)")
+    st.caption("※ 기사(보건복지부 자료)와 동일하게 소득 상한선 제약을 풀고 연평균 임금인상률을 반영한 65세 명목 수령액입니다.")
     col_n1, col_n2, col_n3, col_n4 = st.columns(4)
-    col_n1.metric(label="① 국민연금 세전 수령액", value=f"{int(np_gross_pension):,}원")
+    col_n1.metric(label="① 국민연금 세전 수령액 (명목)", value=f"{int(np_gross_pension):,}원")
     col_n2.metric(label="② 국민연금 세금", value=f"{int(np_monthly_tax):,}원")
-    col_n3.metric(label="③ 국민연금 세후 수령액", value=f"{int(np_net_pension):,}원")
-    col_n4.metric(label="④ 국민연금 현재 가치 환산", value=f"{int(np_pv_net_pension):,}원")
+    col_n3.metric(label="③ 국민연금 세후 수령액 (명목)", value=f"{int(np_net_pension):,}원")
+    col_n4.metric(label="④ 현재 가치 환산 체감액", value=f"{int(np_pv_net_pension):,}원", help="기사에서 언급된 '현재 가치 환산(약 80만 원 선)'과 동일한 체감 가치")
 
     st.markdown("---")
     st.markdown("### 🗓️ 연도별 생애소득 시뮬레이션")
