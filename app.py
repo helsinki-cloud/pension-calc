@@ -39,7 +39,6 @@ def calculate_pension_tax(monthly_pension):
         if deduction > 9000000:
             deduction = 9000000
             
-    # [디버깅] 들여쓰기 수정: if문 밖으로 빼내어 항시 계산되도록 함
     income_amount = yearly_pension - deduction
     tax_base = income_amount - 1500000
     if tax_base < 0: tax_base = 0
@@ -70,7 +69,7 @@ def calculate_salary(start_year, current_age, start_step, military_months, retir
     total_pension_contributions = 0
     total_national_pension_contributions = 0
     
-    NP_MAX_INCOME = 6370000  # 국민연금 소득 상한선
+    NP_MAX_INCOME = 6370000  # 국민연금 기준소득월액 상한선
     
     for i in range(years_to_work + 1):
         year = start_year + i
@@ -105,11 +104,11 @@ def calculate_salary(start_year, current_age, start_step, military_months, retir
         taxable_annual_income = total_annual_salary - (meal_allowance * 12)
         standard_monthly_income = taxable_annual_income / 12
         
-        # 소득재평가 반영
+        # 소득재평가 반영 (퇴직 시점 가치 환산)
         revalued_income = standard_monthly_income * ((1 + increase_rate / 100) ** (years_to_work - i))
         taxable_monthly_incomes_revalued.append(revalued_income)
         
-        # 국민연금 상한 적용 소득
+        # 국민연금 상한선 적용 소득
         np_capped_income = min(standard_monthly_income, NP_MAX_INCOME)
         np_revalued_income = np_capped_income * ((1 + increase_rate / 100) ** (years_to_work - i))
         np_monthly_incomes_revalued.append(np_revalued_income)
@@ -137,17 +136,19 @@ def calculate_salary(start_year, current_age, start_step, military_months, retir
     final_service_months = military_months + (years_to_work * 12)
     final_service_years_float = final_service_months / 12
     
-    # 사학연금 계산 (1.7%)
+    # 1. 사학연금 산출 (재직 1년당 1.7%, 최대 36년 한도 적용)
+    pension_service_years = min(36.0, final_service_years_float)
     avg_standard_monthly_income = sum(taxable_monthly_incomes_revalued) / len(taxable_monthly_incomes_revalued)
-    estimated_gross_pension = avg_standard_monthly_income * final_service_years_float * 0.017
+    estimated_gross_pension = avg_standard_monthly_income * pension_service_years * 0.017
     
-    # 국민연금 정상 산식 적용
-    assumed_A_value = 3200000 
+    # 2. 국민연금 법정 산식 정밀 적용
+    # A값(전체 가입자 평균소득)도 퇴직 시점 가치로 팽창 반영
+    assumed_A_value = 3200000 * ((1 + increase_rate / 100) ** years_to_work) 
     avg_np_monthly_income = sum(np_monthly_incomes_revalued) / len(np_monthly_incomes_revalued)
-    extra_years = max(0, final_service_years_float - 20)
     
-    annual_np_basic = 1.25 * 1.075 * (assumed_A_value + avg_np_monthly_income) * (1 + 0.05 * extra_years)
-    national_pension_gross = (annual_np_basic / 12) * (final_service_years_float / 40)
+    extra_years = max(0, final_service_years_float - 20)
+    monthly_np_basic = (1.29 * (assumed_A_value + avg_np_monthly_income) * (1 + 0.05 * extra_years)) / 12
+    national_pension_gross = monthly_np_basic * (final_service_years_float / 40)
     
     return pd.DataFrame(data), final_service_months, total_pension_contributions, total_national_pension_contributions, estimated_gross_pension, national_pension_gross
 
@@ -177,8 +178,6 @@ if calc_button:
     )
     
     monthly_tax, estimated_net_pension = calculate_pension_tax(estimated_gross_pension)
-    
-    # [디버깅] ZeroDivisionError 방지
     recovery_years = total_contributions / (estimated_net_pension * 12) if estimated_net_pension > 0 else 0
     
     years_to_pension = max(0, 65 - current_age)
