@@ -114,11 +114,11 @@ def calculate_salary(start_year, current_age, start_step, military_years, retire
         data.append({
             "연도": f"{year}년",
             "나이": f"{age}세",
-            "연금산정 재직기간": f"{total_service_years}년",
+            "재직(연금산정)": f"{total_service_years}년",
             "직급/호봉": f"{current_grade}급 {current_step}호봉",
             "월 기본급": f"{adjusted_base_salary:,.0f}원",
-            "연간 상여 및 수당": f"{annual_bonuses:,.0f}원",
-            "납부할 연금액(연)": f"{annual_contribution:,.0f}원",
+            "연간 상여/수당": f"{annual_bonuses:,.0f}원",
+            "연금 납부액(연)": f"{annual_contribution:,.0f}원",
             "예상 총 연봉(세전)": f"{total_annual_salary:,.0f}원"
         })
         
@@ -135,7 +135,7 @@ st.set_page_config(page_title="생애소득 및 사학연금 시뮬레이터", l
 st.title("🏥 생애소득 및 사학연금 시뮬레이터")
 
 with st.sidebar:
-    st.header("👤 나의 기본 정보")
+    st.header("👤 기본 정보")
     start_year = st.number_input("임용 연도", min_value=2000, max_value=2050, value=2024, help="입사한 연도를 입력하세요.")
     current_age = st.number_input("임용 시 나이 (만)", min_value=20, max_value=60, value=30)
     start_step = st.number_input("입사 시 시작 호봉 (5급 기준)", min_value=1, max_value=10, value=1)
@@ -148,7 +148,7 @@ with st.sidebar:
     increase_rate = st.slider("연평균 기본급 인상률 (%)", min_value=0.0, max_value=5.0, value=1.5, step=0.5, help="매년 임금협상으로 오르는 기본급 자체의 인상률(물가인상분 등)을 가정합니다.")
     inflation_rate = st.slider("연평균 물가상승률 (%)", min_value=0.0, max_value=5.0, value=2.0, step=0.5, help="나중에 받을 연금을 현재 물가(돈 가치)로 환산해서 보기 위한 수치입니다.")
     
-    calc_button = st.button("결과 보기", type="primary", use_container_width=True)
+    calc_button = st.button("계산하기", type="primary", use_container_width=True)
 
 if calc_button:
     df, total_years, total_contributions, estimated_gross_pension = calculate_salary(
@@ -156,28 +156,27 @@ if calc_button:
     )
     
     monthly_tax, estimated_net_pension = calculate_pension_tax(estimated_gross_pension)
-    # 원금 회수 기간 계산
     recovery_years = total_contributions / (estimated_net_pension * 12)
     
-    # 65세 수령 시점의 연금 현재 가치 계산 (물가상승률 복리 할인)
     years_to_pension = 65 - current_age
     pv_net_pension = estimated_net_pension / ((1 + inflation_rate / 100) ** years_to_pension)
     
-    st.markdown("### 📊 연금 및 소득 요약 (65세 수령 기준)")
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric(label="총 재직기간 (군소급 포함)", value=f"{total_years}년", help="사학연금 산정의 기준이 되는 총 재직 연수입니다.")
-    col2.metric(label="납부한 사학연금 총액", value=f"{int(total_contributions):,}원", help="재직 기간 동안 내 월급에서 공제된 사학연금 기여금의 총합입니다.")
-    col3.metric(label="본인 기여금 회수 기간", value=f"{recovery_years:.1f}년", help="세후 연금 수령액 기준으로, 내가 낸 돈(기여금)을 전액 회수하는 데 걸리는 시간입니다.")
+    st.markdown("### 📊 재직 및 연금납부 요약")
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric(label="총 재직기간 (군소급 포함)", value=f"{total_years}년")
+    col_b.metric(label="납부한 사학연금 총액", value=f"{int(total_contributions):,}원")
+    col_c.metric(label="본인 기여금 회수 기간", value=f"{recovery_years:.1f}년", help="세후 연금액 기준으로, 내가 낸 기여금을 전액 회수하는 데 걸리는 시간")
     
     st.divider()
     
-    col4, col5, col6 = st.columns(3)
-    col4.metric(label="예상 사학연금 (세후 수령액)", value=f"{int(estimated_net_pension):,}원 / 월", help="65세부터 통장에 찍히는 실제 수령액입니다. (소득세/지방세 공제 후)")
-    col5.metric(label="원천징수 세금 (소득/지방세)", value=f"{int(monthly_tax):,}원 / 월", help="연금 수령 시 발생하는 세금(월 기준)입니다.")
-    col6.metric(label=f"연금액의 현재 가치 환산", value=f"{int(pv_net_pension):,}원 / 월", help=f"물가상승률 {inflation_rate}%를 반영했을 때, 미래에 받을 연금이 지금의 돈 가치로 얼마인지 나타냅니다.")
+    st.markdown("### 💰 65세 예상 사학연금 (월 수령액)")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(label="① 세전 수령액", value=f"{int(estimated_gross_pension):,}원")
+    col2.metric(label="② 세금 (소득/지방세)", value=f"{int(monthly_tax):,}원")
+    col3.metric(label="③ 세후 수령액", value=f"{int(estimated_net_pension):,}원")
+    col4.metric(label="④ 현재 가치 환산", value=f"{int(pv_net_pension):,}원", help=f"설정한 물가상승률({inflation_rate}%)을 반영했을 때 체감되는 현재 돈 가치")
 
     st.markdown("---")
     st.markdown("### 🗓️ 연도별 생애소득 시뮬레이션")
-    st.caption("※ 초과근무수당, 가족수당 등 개인별로 다른 수당은 제외된 기본 추정치입니다. (비과세인 정액급식비는 연금 산정 기준액에서 제외됨)")
+    st.caption("※ 초과근무수당, 가족수당 등 개인별 변동 수당은 제외된 추정치입니다. (비과세인 정액급식비는 연금 산정 기준액에서 제외됨)")
     st.dataframe(df, use_container_width=True, hide_index=True)
